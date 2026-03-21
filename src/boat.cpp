@@ -73,11 +73,10 @@ enum PacketID : uint8_t {
 // ==================Zmienne globalne===================
 
 WiFiUDP udp; // Obiekt do obsługi UDP
+deviceCredentials serverDevice; // Struktura przechowująca dane serwera (adres IP, port, status połączenia)
 
-deviceCredentials serverDevice;
-
-telemetryData telemetry;
-controlData control;
+telemetryData telemetry; // Struktura przechowująca dane telemetryczne
+controlData control; // Struktura przechowująca dane sterujące
 JsonDocument doc;
 
 unsigned long currentTime = 0;
@@ -94,7 +93,7 @@ bool longRangeCommunication = false;
  * Jeśli połączenie jest udane, ustawia adres IP i port docelowego urządzenia (serwera) oraz uruchamia nasłuch UDP.
  * W przypadku niepowodzenia, zwraca false.
  * 
- * @return bool
+ * @return `true` jeśli połączenie z siecią WiFi zostało nawiązane pomyślnie, `false` w przypadku błędu.
  */
 bool wifiConnect() {
   Serial.println("Próba połączenia z siecią WiFi: " SSID);
@@ -129,7 +128,7 @@ bool wifiConnect() {
 /**
  * @brief Funkcja odpowiedzialna za ponowne uruchomienie połączenia WiFi.
  * 
- * @return bool
+ * @return `true` jeśli ponowne połączenie z siecią WiFi zakończyło się sukcesem, `false` w przypadku błędu.
  */
 bool restartWifi(){
     return wifiConnect();
@@ -140,7 +139,7 @@ bool restartWifi(){
  * Jeśli status połączenia uległ zmianie (połączenie nawiązane lub utracone),
  * aktualizuje flagę `connected` w strukturze `serverDevice` i wyświetla odpowiedni komunikat na monitorze szeregowym.
  * 
- * @return bool
+ * @return `true` jeśli urządzenie jest połączone z siecią WiFi, `false` w przeciwnym przypadku.
  */
 bool isConnected() {
     if (WiFi.status() == WL_CONNECTED) {
@@ -158,6 +157,11 @@ bool isConnected() {
     }
 }
 // ==============Konfiguracja SPI i LoRa================
+/**
+ * @brief Funkcja odpowiedzialna za konfigurację modułu LoRa.
+ * 
+ * @return `true` jeśli inicjalizacja LoRa zakończyła się sukcesem, `false` w przypadku błędu.
+ */
 bool setupLoRa() {
     SPI.begin(SCK, MISO, MOSI, NSS_PIN); // SCK:18, MISO:19, MOSI:23, NSS:5
     
@@ -173,12 +177,11 @@ bool setupLoRa() {
     Serial.println("LoRa zainicjalizowana pomyślnie.");
     return true;
 }
-
 // ==============Komunikajca Krótki zasięg==============
 /**
  * @brief Funkcja odpowiedzialna za konwersję danych telemetrycznych do formatu JSON.
  * 
- * @param telemetry 
+ * @param telemetry
  * @param myDeviceType 
  * 
  * @return String
