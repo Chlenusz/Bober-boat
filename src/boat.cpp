@@ -1,6 +1,8 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
+#include <SPI.h> 
+#include <LoRa.h> 
 
 // ==================Definicje Globalne===================
 
@@ -14,23 +16,30 @@
 #define PASSWORD "bober123"
 
 // Ustawienia UDP
-#define LOCAL_UDP_PORT 4444       // Port lokalny nasłuchu dla ESP32
+#define LOCAL_UDP_PORT 4444      
 #define TRANSCIVER_MODE false
 
+// LoRa PINOUT
+#define NSS_PIN  5
+#define RST_PIN  14
+#define DIO0_PIN 2
+
 // ==================Struktury===================
-struct telemetryData{
-    int serverTemperature;
-    int boatTemperature;
-    int sens1;
-    int sens2;
-    float sens3;
-    float sens4;
-    long Rssi;
+struct __attribute__((packed)) telemetryData {
+    uint8_t packetID;      
+    int8_t boatTemperature;     
+    int8_t boatTemp;       
+    int16_t sens1;         
+    int16_t sens2;         
+    float sens3;           
+    float sens4;          
+    int16_t Rssi;          
 };
 
-struct controlData{
-    float horizontal;
-    float throttle;
+struct __attribute__((packed)) controlData {
+    uint8_t packetID;      
+    float horizontal;      
+    float throttle;        
 };
 
 struct deviceCredentials{
@@ -62,7 +71,6 @@ WiFiUDP udp; // Obiekt do obsługi UDP
 
 deviceCredentials serverDevice;
 
-
 telemetryData telemetry;
 controlData control;
 JsonDocument doc;
@@ -70,6 +78,9 @@ JsonDocument doc;
 unsigned long currentTime = 0;
 unsigned long lastTelemetryTime = 0;
 unsigned long lastReconnectAttempt = 0;
+
+bool shortRangeCommunication = true;
+bool longRangeCommunication = false;
 
 // ==================Konfiguracja Wifi==================
 bool wifiConnect() {
@@ -123,17 +134,29 @@ bool isConnected() {
     }
 }
 // ==============Konfiguracja SPI i LoRa================
+bool setupLoRa() {
+    SPI.begin(SCK, MISO, MOSI, NSS_PIN); // SCK, MISO, MOSI, SS
+    
+    LoRa.setPins(NSS_PIN, RST_PIN, DIO0_PIN);
 
-// ==================Wysyłanie Danych===================
+    if (!LoRa.begin(915E6)) {
+        Serial.println("Błąd inicjalizacji LoRa! Sprawdź podłączenie SPI.");
+        return false;
+    }
+    LoRa.enableCrc();
+    LoRa.setCodingRate4(8);
+    // LoRa.setSpreadingFactor(9); // Jeśli będzie bardzo przerywać, włącz to || wolniejszy przesył danych
+    Serial.println("LoRa zainicjalizowana pomyślnie.");
+    return true;
+}
 
-// ==================Krótki zasięg======================
+// ==============Komunikajca Krótki zasięg==============
 String getJson(telemetryData& telemetry, deviceType myDeviceType) {
     JsonDocument doc;
     
     doc["deviceType"] = static_cast<int>(myDeviceType); 
     doc["dataType"] = static_cast<int>(TELEMETRY);
     
-    doc["STemp"] = telemetry.serverTemperature;
     doc["BTemp"] = telemetry.boatTemperature;
     doc["rssi"] = telemetry.Rssi;
 
@@ -162,8 +185,6 @@ void unpackJson(JsonDocument& doc, controlData& control) {
 }
 
 void unpackJson(JsonDocument& doc, telemetryData& telemetry) {
-    // Klucze dopasowane do poprzedniej funkcji getJson() oraz struktury
-    telemetry.serverTemperature = doc["STemp"] | 0;
     telemetry.boatTemperature = doc["BTemp"] | 0;
     telemetry.sens1 = doc["sens1"] | 0;
     telemetry.sens2 = doc["sens2"] | 0;
@@ -230,13 +251,54 @@ void receiveUDP() {
         }
     }
 }
-// ==================Daleki zasięg======================
+// ===============Komunikacja Daleki zasięg===============
+void sendLoRa(const String& message) {
+    LoRa.beginPacket();
+    LoRa.print(message);
+    LoRa.endPacket();
+    Serial.println("Wysłano pakiet przez LoRa");
+}
+
+// DODANO: Funkcja do odbierania i przetwarzania pakietów LoRa
+void receiveLoRa() {
+    int packetSize = LoRa.parsePacket();
+    if (packetSize) {
+        String incomingPacket = "";
+        while (LoRa.available()) {
+            incomingPacket += (char)LoRa.read();
+        }
+        
+        DeserializationError error = deserializeJson(doc, incomingPacket);
+
+        if (error) {
+            Serial.println("Błąd parsowania JSON w receiveLoRa");
+            return;
+        }
+
+        deviceType senderDevice = static_cast<deviceType>(doc["deviceType"] | static_cast<int>(UNKONWN));
+        dataType currentData = static_cast<dataType>(doc["dataType"] | static_cast<int>(TELEMETRY));
+
+        switch (currentData){
+            case CONTROL:
+                unpackJson(doc, control);
+                break;
+            case TELEMETRY:
+                unpackJson(doc, telemetry);
+                break;
+            default:
+                break;
+        }
+        Serial.println("Odebrano pakiet przez LoRa");
+    }
+}
 // -------------------- FUNKCJA: konfiguracja i start serwera --------------------
 
 void setup(){
     Serial.begin(115200);
+    Serial.println("");
     Serial.println("Setup zakończony");
     serverDevice.connected = wifiConnect();
+    Serial.printf("PINOUT SPI: MOSI: %d, MISO: %d, SCK: %d, NSS: %d\n", MOSI, MISO, SCK, SS);
 }
 
 void loop(){
@@ -247,10 +309,11 @@ void loop(){
         telemetry.Rssi = WiFi.RSSI();
         telemetry.boatTemperature = temperatureRead();
         sendUDP(serverDevice, getJson(telemetry, BOAT));
-        Serial.println(control.throttle, control.horizontal);
+        Serial.printf("Throttle: %.2f, Horizontal: %.2f\n", control.throttle, control.horizontal);
     }
-
-    receiveUDP();
+    if (serverDevice.connected) {
+        receiveUDP();
+    }
 
     if(currentTime - lastReconnectAttempt>=RECONNECT_INTERVAL_MS){
         lastReconnectAttempt = currentTime;
