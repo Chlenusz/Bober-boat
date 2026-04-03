@@ -318,7 +318,7 @@ void sendLoRaTelemetry(const telemetryData& data) {
     // Bezpośrednie zrzucenie pamięci struktury do bufora FIFO modułu LoRa
     LoRa.write((const uint8_t*)&data, sizeof(telemetryData));
     LoRa.endPacket();
-    Serial.println("Wysłano binarną telemetrię przez LoRa");
+    Serial.println("Wysłano telemetrię przez LoRa");
 }
 
 void receiveLoRa() {
