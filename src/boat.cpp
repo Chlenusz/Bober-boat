@@ -3,7 +3,7 @@
 // ==================Definicje Globalne===================
 #define NSS_PIN  5
 #define RST_PIN  14
-#define DIO0_PIN 2
+#define DIO0_PIN 33
 
 #define PWM_PIN 16
 
@@ -17,10 +17,9 @@ unsigned long lastControlTime = 0;
 
 bool LoRaStatus = false;
 
-
 // ===================== Funkcje Lokalne ==========================
 void setThrottle(int8_t value) {
-    ledcWrite(0, value); // Ustawienie wartości PWM na podstawie wartości przepustnicy
+    //ledcWrite(0, value); // Ustawienie wartości PWM na podstawie wartości przepustnicy
     Serial.println("Ustawianie przepustnicy na wartość: " + String(value));
 }
 // ===================== Wstępna konfiguracja ======================
@@ -28,9 +27,10 @@ void setup(){
     Serial.begin(115200);
     Serial.println("");
     Serial.println("Setup zakończony");
-    ledcAttachPin(PWM_PIN, 0); // Przypisanie pinu do kanału PWM
-    LoRaStatus = setupLoRa();
+    //ledcAttachPin(PWM_PIN, 0); // Przypisanie pinu do kanału PWM
+    LoRaStatus = setupLoRa(NSS_PIN, RST_PIN, DIO0_PIN);
     Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
+
 }
 // ===================== Główna pętla programu =====================
 void loop(){
@@ -44,9 +44,10 @@ void loop(){
     }else {
         LoRaStatus = setupLoRa();
     }
-
+    
     if (newDataReady) {
         newDataReady = false; // Reset flag after processing
+        Serial.println("Przetwarzanie odebranej wiadomości...");
         if(packetId == PacketID::ID_CONTROL) {
             bool decodeSuccess = decodeMessage(packetId);
             if (!decodeSuccess) {
@@ -58,6 +59,7 @@ void loop(){
     }
 
     if (currentTime-lastControlTime >= CONTROL_INTERVAL_MS) {
+        bool decodeSuccess = decodeMessage(PacketID::ID_CONTROL);
         lastControlTime = currentTime;
         setThrottle(control.throttle);
     }

@@ -7,7 +7,7 @@
 
 // ==================Definicje Globalne===================
 #define TELEMETRY_INTERVAL_MS 5000
-#define CONTROL_INTERVAL_MS 100
+#define CONTROL_INTERVAL_MS 1000
 // ==================Struktury danych===================
 struct __attribute__((packed)) telemetryData {
     int8_t boatTemperature;     
@@ -52,8 +52,8 @@ enum PacketID : uint8_t {
 };
 // ==================Definicje globalne===================
 const uint8_t BROADCAST_ADDRESS = 0xFF;
-const uint8_t BOAT_ADDRESS = 0x10;
-const uint8_t SERVER_ADDRESS = 0x00;
+const uint8_t BOAT_ADDRESS = 0xAA;
+const uint8_t SERVER_ADDRESS = 0xBB;
 
 byte msgCount = 0;  
 uint8_t rxBuffer[256];      // Bufor na odebrane bajty
@@ -88,23 +88,24 @@ void onReceive(int packetSize) {
   }
 
   if (incomingLength != i) {   // check length for error
-    Serial.println("error: message length does not match length");
+    //Serial.println("error: message length does not match length");
     return;                             // skip rest of function
   }
 
   // if the recipient isn't this device or broadcast,
   if (recipient != BOAT_ADDRESS && recipient != BROADCAST_ADDRESS) {
-    Serial.println("This message is not for me.");
+    //Serial.println("This message is not for me.");
     return;                             // skip rest of function
   }
   
   // if message is for this device, or broadcast, print details:
-  Serial.println("Received from: 0x" + String(sender, HEX));
+  //Serial.println("Received from: 0x" + String(sender, HEX));
   rxLength = incomingLength;
   newDataReady = true;
   //Serial.println("Message length: " + String(incomingLength));
   //Serial.println("Message: " + incoming);
 }
+
 /**
  * @brief Funkcja odpowiedzialna za konfigurację modułu LoRa.
  * 
@@ -117,55 +118,12 @@ bool setupLoRa(uint8_t ssPin = 5, uint8_t rstPin = 14, uint8_t irqPin = 2) {
         Serial.println("Błąd inicjalizacji LoRa! Sprawdź podłączenie SPI.");
         return false;
     }
-    LoRa.enableCrc();
-    LoRa.setCodingRate4(8);
+    //LoRa.enableCrc();
+    //LoRa.setCodingRate4(8);
     LoRa.onReceive(onReceive);
     //LoRa.setSpreadingFactor(9); // Jeśli będzie bardzo przerywać, włącz to || wolniejszy przesył danych
     Serial.println("LoRa zainicjalizowana pomyślnie.");
     return true;
-}
-
-// ==================Funkcje Krótki zasięg===================
-/**
- * @brief Funkcja odpowiedzialna za konwersję danych telemetrycznych do formatu JSON.
- * 
- * @param telemetry
- * @param myDeviceType 
- * 
- * @return String
- */
-String getJson(telemetryData& telemetry, deviceType myDeviceType) {
-    JsonDocument doc;
-    
-    doc["deviceType"] = static_cast<int>(myDeviceType); 
-    doc["dataType"] = static_cast<int>(TELEMETRY);
-    
-    doc["BTemp"] = telemetry.boatTemperature;
-    doc["rssi"] = telemetry.Rssi;
-
-    String output;
-    serializeJson(doc, output);
-    return output; 
-}
-/**
- * @brief Funkcja odpowiedzialna za konwersję danych sterujących do formatu JSON.
- * 
- * @param control 
- * @param myDeviceType 
- * @return String
- */
-String getJson(controlData& control, deviceType myDeviceType) {
-    JsonDocument doc;
-
-    doc["deviceType"] = static_cast<int>(myDeviceType);
-    doc["dataType"] = static_cast<int>(CONTROL);
-    
-    doc["throttle"] = control.throttle;
-    doc["rudder"] = control.rudder;
-
-    String output;
-    serializeJson(doc, output);
-    return output; 
 }
 // ==================Funkcje Daleki zasięg===================
 /**

@@ -17,8 +17,6 @@
 
 // Ustawienia UDP
 #define LOCAL_UDP_PORT 4444       // Port lokalny nasłuchu dla ESP32
-#define TRANSCIVER_MODE true
-
 // ==================Zmienne globalne===================
 
 WiFiUDP udp; // Obiekt do obsługi UDP
@@ -35,7 +33,6 @@ unsigned long lastControlTime = 0;
 
 bool newDataReady = false;  // Flaga informująca, że czeka nowa wiadomość
 bool LoRaStatus = false;
-
 
 // ==================Konfiguracja Wifi===================
 
@@ -80,12 +77,63 @@ bool restartWifi(){
     return setupWifi();
 }
 // ==================Wysyłanie Danych===================
+/**
+ * @brief Funkcja odpowiedzialna za konwersję danych telemetrycznych do formatu JSON.
+ * 
+ * @param telemetry
+ * @param myDeviceType 
+ * 
+ * @return String
+ */
+String getJson(telemetryData& telemetry, deviceType myDeviceType) {
+    JsonDocument doc;
+    
+    doc["deviceType"] = static_cast<int>(myDeviceType); 
+    doc["dataType"] = static_cast<int>(TELEMETRY);
+    
+    doc["BTemp"] = telemetry.boatTemperature;
+    doc["rssi"] = telemetry.Rssi;
 
+    String output;
+    serializeJson(doc, output);
+    return output; 
+}
+/**
+ * @brief Funkcja odpowiedzialna za konwersję danych sterujących do formatu JSON.
+ * 
+ * @param control 
+ * @param myDeviceType 
+ * @return String
+ */
+String getJson(controlData& control, deviceType myDeviceType) {
+    JsonDocument doc;
+
+    doc["deviceType"] = static_cast<int>(myDeviceType);
+    doc["dataType"] = static_cast<int>(CONTROL);
+    
+    doc["throttle"] = control.throttle;
+    doc["rudder"] = control.rudder;
+
+    String output;
+    serializeJson(doc, output);
+    return output; 
+}
+/**
+ * @brief Funkcja odpowiedzialna za rozpakowanie danych sterujących z formatu JSON do struktury controlData.
+ * 
+ * @param doc 
+ * @param control 
+ */
 void unpackJson(JsonDocument& doc, controlData& control) {
     control.throttle = doc["throttle"] | 0.0f; // Domyślna wartość 0.0f
     control.rudder = doc["rudder"] | 0.0f; // Domyślna wartość 0.0f
 }
-
+/**
+ * @brief Funkcja odpowiedzialna za rozpakowanie danych telemetrycznych z formatu JSON do struktury telemetryData.
+ * 
+ * @param doc 
+ * @param telemetry 
+ */
 void unpackJson(JsonDocument& doc, telemetryData& telemetry) {
     telemetry.boatTemperature = doc["BTemp"] | 0;
     telemetry.sens1 = doc["sens1"] | 0;
@@ -94,8 +142,12 @@ void unpackJson(JsonDocument& doc, telemetryData& telemetry) {
     telemetry.sens4 = doc["sens4"] | 0.0f;
     telemetry.Rssi = doc["rssi"] | 0;
 }
-
-
+/**
+ * @brief Funkcja odpowiedzialna za wysyłanie wiadomości przez UDP.
+ * 
+ * @param targetDevice 
+ * @param message 
+ */
 void sendUDP(deviceCredentials& targetDevice, const String& message) {
     if (!targetDevice.connected) return;
     bool deviceStatus;
@@ -120,7 +172,10 @@ void sendUDP(deviceCredentials& targetDevice, const String& message) {
 
     Serial.println("Wysłano pakiet UDP do "+String(targetDevice.ip.toString()));
 }
-
+/**
+ * @brief Funkcja odpowiedzialna za odbieranie wiadomości przez UDP.
+ * 
+ */
 void receiveUDP() {
     int packetSize = udp.parsePacket();
     if (packetSize) {
