@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
+#include "boat_lib.h"
 
 // ==================Definicje Globalne===================
 
@@ -18,46 +19,11 @@
 #define LOCAL_UDP_PORT 4444       // Port lokalny nasłuchu dla ESP32
 #define TRANSCIVER_MODE true
 
-// ==================Struktury===================
-struct telemetryData{
-    int serverTemperature;
-    int boatTemperature;
-    int sens1;
-    int sens2;
-    float sens3;
-    float sens4;
-    long Rssi;
-};
-
-struct controlData{
-    float rudder;
-    float throttle;
-};
-
-struct deviceCredentials{
-    IPAddress ip;
-    uint16_t port;
-    bool connected;
-};
-
-enum dataType {
-    TELEMETRY,
-    CONTROL
-};
-
-enum deviceType {
-    BOAT,
-    ANDROID,
-    SERVER,
-    UNKONWN
-};
-
 // ==================Zmienne globalne===================
 
 WiFiUDP udp; // Obiekt do obsługi UDP
 
 deviceCredentials androidDevice;
-deviceCredentials boatDevice;
 
 telemetryData telemetry;
 controlData control;
@@ -66,6 +32,9 @@ JsonDocument doc;
 unsigned long currentTime = 0;
 unsigned long lastTelemetryTime = 0;
 unsigned long lastControlTime = 0;
+
+bool newDataReady = false;  // Flaga informująca, że czeka nowa wiadomość
+bool LoRaStatus = false;
 
 
 // ==================Konfiguracja Wifi===================
@@ -111,35 +80,6 @@ bool restartWifi(){
     return setupWifi();
 }
 // ==================Wysyłanie Danych===================
-
-String getJson(telemetryData& telemetry, deviceType myDeviceType) {
-    JsonDocument doc;
-    
-    doc["deviceType"] = static_cast<int>(myDeviceType); 
-    doc["dataType"] = static_cast<int>(TELEMETRY);
-    
-    doc["STemp"] = telemetry.serverTemperature;
-    doc["BTemp"] = telemetry.boatTemperature;
-    doc["rssi"] = telemetry.Rssi;
-
-    String output;
-    serializeJson(doc, output);
-    return output; 
-}
-
-String getJson(controlData& control, deviceType myDeviceType) {
-    JsonDocument doc;
-
-    doc["deviceType"] = static_cast<int>(myDeviceType);
-    doc["dataType"] = static_cast<int>(CONTROL);
-    
-    doc["throttle"] = control.throttle;
-    doc["rudder"] = control.rudder;
-
-    String output;
-    serializeJson(doc, output);
-    return output; 
-}
 
 void unpackJson(JsonDocument& doc, controlData& control) {
     control.throttle = doc["throttle"] | 0.0f; // Domyślna wartość 0.0f
@@ -201,19 +141,13 @@ void receiveUDP() {
         deviceType senderDevice = static_cast<deviceType>(doc["deviceType"] | static_cast<int>(UNKONWN));
         dataType currentData = static_cast<dataType>(doc["dataType"] | static_cast<int>(TELEMETRY));
         // Aktualizacja statusu i danych na podstawie enuma
-        if(!androidDevice.connected || !boatDevice.connected){
+        if(!androidDevice.connected){
             switch (senderDevice) {
             case ANDROID:
                 androidDevice.ip = udp.remoteIP();
                 androidDevice.port = udp.remotePort();
                 androidDevice.connected = true;
                 Serial.println("Połączono z urządzeniem Android!");
-                break;
-            case BOAT:
-                boatDevice.ip = udp.remoteIP();
-                boatDevice.port = udp.remotePort();
-                boatDevice.connected = true;
-                Serial.println("Połączono z urządzeniem Boat!");
                 break;
             case SERVER:
                 Serial.println("Coś poszło nie tak 0");
@@ -247,6 +181,8 @@ void setup(){
     Serial.println("");
     Serial.println("Setup zakończony");
     setupWifi();
+    LoRaStatus = setupLoRa();
+    Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
 }
 
 void loop(){
@@ -255,13 +191,19 @@ void loop(){
 
     if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS)&&androidDevice.connected){
         lastTelemetryTime = currentTime;
-        telemetry.serverTemperature = temperatureRead();
+        //telemetry.serverTemperature = temperatureRead();
         sendUDP(androidDevice, getJson(telemetry,SERVER));
     }
 
-    if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)&& boatDevice.connected) {
+
+
+    if (LoRaStatus) {
+        if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)) {
         lastControlTime = currentTime;
-        sendUDP(boatDevice, getJson(control,SERVER));
+        sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
+        }
+    } else {
+        LoRaStatus = setupLoRa();
     }
 
     receiveUDP();
