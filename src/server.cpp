@@ -121,8 +121,12 @@ String getJson(controlData& control, deviceType myDeviceType) {
  * @param control 
  */
 void unpackJson(JsonDocument& doc, controlData& control) {
-    control.throttle = doc["throttle"] | 0.0f; // Domyślna wartość 0.0f
-    control.rudder = doc["rudder"] | 0.0f; // Domyślna wartość 0.0f
+    float temp = doc["throttle"] | 0.0f; // Domyślna wartość 0
+    if (temp < 0.0f) temp = 0.0f; // Zapewnienie, że wartość nie jest ujemna
+    control.throttle = (uint16_t)round(temp*pow(2, PWM_RESOULTION)); // Konwersja float do uint16_t z zaokrągleniem
+    temp = doc["rudder"] | 0.0f; // Domyślna wartość 0
+    if (temp < 0.0f) temp = 0.0f; // Zapewnienie, że wartość nie jest ujemna
+    control.rudder = (uint16_t)round(temp*pow(2, PWM_RESOULTION)); // Konwersja float do uint16_t z zaokrągleniem
 }
 /**
  * @brief Funkcja odpowiedzialna za rozpakowanie danych telemetrycznych z formatu JSON do struktury telemetryData.
@@ -208,9 +212,11 @@ void receiveUDP() {
         switch (currentData){
             case CONTROL:
                 unpackJson(doc, control);
+                Serial.println("Odebrano dane sterujące: Throttle = " + String(control.throttle) + ", Rudder = " + String(control.rudder));
                 break;
             case TELEMETRY:
                 unpackJson(doc, telemetry);
+                Serial.println("Odebrano dane telemetryczne: BoatTemp = " + String(telemetry.boatTemp) + ", Sens1 = " + String(telemetry.sens1) + ", Sens2 = " + String(telemetry.sens2) + ", Sens3 = " + String(telemetry.sens3) + ", Sens4 = " + String(telemetry.sens4));
                 break;
             default:
                 break;
@@ -231,7 +237,6 @@ void setup(){
 
 void loop(){
     currentTime = millis();
-    control.throttle = 128.0f;
 
     if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS)&&androidDevice.connected){
         lastTelemetryTime = currentTime;
@@ -242,7 +247,7 @@ void loop(){
     if (LoRaStatus) {
         if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)) {
             lastControlTime = currentTime;
-            Serial.println("Wysyłanie danych sterujących do łódki" + String(control.throttle));
+            Serial.println("Wysyłanie danych sterujących do łódki: " + String(control.throttle));
             sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
             LoRa.receive();
         }
