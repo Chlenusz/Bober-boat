@@ -23,15 +23,12 @@ WiFiUDP udp; // Obiekt do obsługi UDP
 
 deviceCredentials androidDevice;
 
-telemetryData telemetry;
-controlData control;
 JsonDocument doc;
 
 unsigned long currentTime = 0;
 unsigned long lastTelemetryTime = 0;
 unsigned long lastControlTime = 0;
 
-bool newDataReady = false;  // Flaga informująca, że czeka nowa wiadomość
 bool LoRaStatus = false;
 
 // ==================Konfiguracja Wifi===================
@@ -91,8 +88,7 @@ String getJson(telemetryData& telemetry, deviceType myDeviceType) {
     doc["deviceType"] = static_cast<int>(myDeviceType); 
     doc["dataType"] = static_cast<int>(TELEMETRY);
     
-    doc["BTemp"] = telemetry.boatTemperature;
-    doc["rssi"] = telemetry.Rssi;
+    doc["BTemp"] = telemetry.boatTemp;
 
     String output;
     serializeJson(doc, output);
@@ -135,12 +131,11 @@ void unpackJson(JsonDocument& doc, controlData& control) {
  * @param telemetry 
  */
 void unpackJson(JsonDocument& doc, telemetryData& telemetry) {
-    telemetry.boatTemperature = doc["BTemp"] | 0;
+    telemetry.boatTemp = doc["BTemp"] | 0;
     telemetry.sens1 = doc["sens1"] | 0;
     telemetry.sens2 = doc["sens2"] | 0;
     telemetry.sens3 = doc["sens3"] | 0.0f;
     telemetry.sens4 = doc["sens4"] | 0.0f;
-    telemetry.Rssi = doc["rssi"] | 0;
 }
 /**
  * @brief Funkcja odpowiedzialna za wysyłanie wiadomości przez UDP.
@@ -204,14 +199,8 @@ void receiveUDP() {
                 androidDevice.connected = true;
                 Serial.println("Połączono z urządzeniem Android!");
                 break;
-            case SERVER:
-                Serial.println("Coś poszło nie tak 0");
-                break;
-            case UNKONWN:
-                Serial.println("Coś poszło nie tak 1");
-                break;
             default:
-                Serial.println("Coś poszło nie tak 2");
+                Serial.println("Coś poszło nie tak");
                 break;
             }
         }
@@ -235,28 +224,27 @@ void setup(){
     Serial.begin(115200);
     Serial.println("");
     Serial.println("Setup zakończony");
-    setupWifi();
+    //setupWifi();
     LoRaStatus = setupLoRa();
     Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
 }
 
 void loop(){
     currentTime = millis();
-    
-
+    /*
     if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS)&&androidDevice.connected){
         lastTelemetryTime = currentTime;
-        //telemetry.serverTemperature = temperatureRead();
+        telemetry.serverTemp = temperatureRead();
         sendUDP(androidDevice, getJson(telemetry,SERVER));
     }
-
-
+        */
 
     if (LoRaStatus) {
         if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)) {
-        lastControlTime = currentTime;
-        sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
+            lastControlTime = currentTime;
+            sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
         }
+        LoRa.receive();
     } else {
         LoRaStatus = setupLoRa();
     }

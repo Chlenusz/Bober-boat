@@ -10,13 +10,12 @@
 #define CONTROL_INTERVAL_MS 1000
 // ==================Struktury danych===================
 struct __attribute__((packed)) telemetryData {
-    int8_t boatTemperature;     
-    int8_t boatTemp;       
+    int8_t serverTemp;     
+    int8_t boatTemp;   
     int16_t sens1;         
     int16_t sens2;         
     float sens3;           
     float sens4;          
-    int16_t Rssi;          
 };
 
 struct __attribute__((packed)) controlData {
@@ -88,22 +87,11 @@ void onReceive(int packetSize) {
   }
 
   if (incomingLength != i) {   // check length for error
-    //Serial.println("error: message length does not match length");
-    return;                             // skip rest of function
+    return;                             
   }
-
-  // if the recipient isn't this device or broadcast,
-  if (recipient != BOAT_ADDRESS && recipient != BROADCAST_ADDRESS) {
-    //Serial.println("This message is not for me.");
-    return;                             // skip rest of function
-  }
-  
-  // if message is for this device, or broadcast, print details:
-  //Serial.println("Received from: 0x" + String(sender, HEX));
   rxLength = incomingLength;
   newDataReady = true;
-  //Serial.println("Message length: " + String(incomingLength));
-  //Serial.println("Message: " + incoming);
+  //Serial.println("Received from: 0x" + String(sender, HEX));
 }
 
 /**
@@ -111,7 +99,7 @@ void onReceive(int packetSize) {
  * 
  * @return `true` jeśli inicjalizacja LoRa zakończyła się sukcesem, `false` w przypadku błędu.
  */
-bool setupLoRa(uint8_t ssPin = 5, uint8_t rstPin = 14, uint8_t irqPin = 2) {
+bool setupLoRa(uint8_t ssPin = 5, uint8_t rstPin = 14, uint8_t irqPin = 33) {
     LoRa.setPins(ssPin, rstPin, irqPin);
 
     if (!LoRa.begin(868E6)) {
