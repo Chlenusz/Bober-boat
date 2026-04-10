@@ -75,7 +75,7 @@ void onReceive(int packetSize) {
   if (packetSize == 0) return;          // if there's no packet, return
 
   // read packet header bytes:
-  int recipient = LoRa.read();          // recipient address
+  byte recipient = LoRa.read();          // recipient address
   byte sender = LoRa.read();            // sender address
   byte incomingMsgId = LoRa.read();     // incoming msg ID
   byte incomingLength = LoRa.read();    // incoming msg length
@@ -91,7 +91,7 @@ void onReceive(int packetSize) {
   }
   rxLength = incomingLength;
   newDataReady = true;
-  //Serial.println("Received from: 0x" + String(sender, HEX));
+  Serial.println("Received from: 0x" + String(sender, HEX));
 }
 
 /**

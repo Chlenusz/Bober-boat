@@ -19,7 +19,7 @@ bool LoRaStatus = false;
 
 // ===================== Funkcje Lokalne ==========================
 void setThrottle(int8_t value) {
-    //ledcWrite(0, value); // Ustawienie wartości PWM na podstawie wartości przepustnicy
+    ledcWrite(0, value); // Ustawienie wartości PWM na podstawie wartości przepustnicy
     Serial.println("Ustawianie przepustnicy na wartość: " + String(value));
 }
 // ===================== Wstępna konfiguracja ======================
@@ -27,10 +27,11 @@ void setup(){
     Serial.begin(115200);
     Serial.println("");
     Serial.println("Setup zakończony");
-    //ledcAttachPin(PWM_PIN, 0); // Przypisanie pinu do kanału PWM
+    ledcSetup(0,500, 8); // Konfiguracja kanału PWM: kanał 0, częstotliwość 500 Hz, rozdzielczość 8 bitów
+    ledcAttachPin(PWM_PIN, 0); // Przypisanie pinu do kanału PWM
     LoRaStatus = setupLoRa(NSS_PIN, RST_PIN, DIO0_PIN);
     Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
-
+    packetId = PacketID::ID_CONTROL;
 }
 // ===================== Główna pętla programu =====================
 void loop(){
@@ -48,18 +49,14 @@ void loop(){
     if (newDataReady) {
         newDataReady = false; // Reset flag after processing
         Serial.println("Przetwarzanie odebranej wiadomości...");
-        if(packetId == PacketID::ID_CONTROL) {
-            bool decodeSuccess = decodeMessage(packetId);
-            if (!decodeSuccess) {
-                Serial.println("Nie można przetworzyć odebranej wiadomości sterującej.");
-            }
-        } else {
-            Serial.println("Odebrano wiadomość, ale nie jest to pakiet sterujący. Ignorowanie.");
+        bool decodeSuccess = decodeMessage(packetId);
+        if (!decodeSuccess) {
+            Serial.println("Nie można przetworzyć odebranej wiadomości sterującej.");
         }
+
     }
 
     if (currentTime-lastControlTime >= CONTROL_INTERVAL_MS) {
-        bool decodeSuccess = decodeMessage(PacketID::ID_CONTROL);
         lastControlTime = currentTime;
         setThrottle(control.throttle);
     }

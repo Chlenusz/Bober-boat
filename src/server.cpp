@@ -224,27 +224,29 @@ void setup(){
     Serial.begin(115200);
     Serial.println("");
     Serial.println("Setup zakończony");
-    //setupWifi();
+    setupWifi();
     LoRaStatus = setupLoRa();
     Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
 }
 
 void loop(){
     currentTime = millis();
-    /*
+    control.throttle = 128.0f;
+
     if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS)&&androidDevice.connected){
         lastTelemetryTime = currentTime;
         telemetry.serverTemp = temperatureRead();
         sendUDP(androidDevice, getJson(telemetry,SERVER));
     }
-        */
 
     if (LoRaStatus) {
         if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)) {
             lastControlTime = currentTime;
+            Serial.println("Wysyłanie danych sterujących do łódki" + String(control.throttle));
             sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
+            LoRa.receive();
         }
-        LoRa.receive();
+        
     } else {
         LoRaStatus = setupLoRa();
     }
