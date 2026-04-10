@@ -19,8 +19,8 @@ struct __attribute__((packed)) telemetryData {
 };
 
 struct __attribute__((packed)) controlData {
-    float rudder;      
-    float throttle;        
+    uint16_t rudder;      
+    uint16_t throttle;        
 };
 
 struct deviceCredentials{
@@ -109,6 +109,7 @@ bool setupLoRa(uint8_t ssPin = 5, uint8_t rstPin = 14, uint8_t irqPin = 33) {
     //LoRa.enableCrc();
     //LoRa.setCodingRate4(8);
     LoRa.onReceive(onReceive);
+    LoRa.
     //LoRa.setSpreadingFactor(9); // Jeśli będzie bardzo przerywać, włącz to || wolniejszy przesył danych
     Serial.println("LoRa zainicjalizowana pomyślnie.");
     return true;
