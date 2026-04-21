@@ -7,13 +7,14 @@
 
 // ==================Definicje Globalne===================
 #define TELEMETRY_INTERVAL_MS 5000
-#define CONTROL_INTERVAL_MS 1000
+#define CONTROL_INTERVAL_MS 100
 
 #define PWM_RESOULTION 8
 // ==================Struktury danych===================
 struct __attribute__((packed)) telemetryData {
     int8_t serverTemp;     
-    int8_t boatTemp;   
+    int8_t boatTemp; 
+    int16_t boatRssi;  
     int16_t sens1;         
     int16_t sens2;         
     float sens3;           
@@ -162,6 +163,7 @@ bool decodeMessage(PacketID expectedPacketId) {
         if (rxLength == sizeof(controlData)) {
             // Kopiujemy bajty z bufora rxBuffer prosto do pamięci struktury 'control'
             memcpy(&control, rxBuffer, sizeof(controlData));
+            telemetry.boatRssi = LoRa.packetRssi(); // Aktualizacja wartości RSSI na podstawie funkcji biblioteki LoRa
             Serial.println("Wiadomosc zdekodowana: zaktualizowano dane sterujace.");
             return true;
         } else {
@@ -178,6 +180,7 @@ bool decodeMessage(PacketID expectedPacketId) {
         if (rxLength == sizeof(telemetryData)) {
             // Kopiujemy bajty z bufora rxBuffer prosto do pamięci struktury 'telemetry'
             memcpy(&telemetry, rxBuffer, sizeof(telemetryData));
+            telemetry.boatRssi = LoRa.packetRssi(); // Aktualizacja wartości RSSI na podstawie funkcji biblioteki LoRa
             Serial.println("Wiadomosc zdekodowana: zaktualizowano dane telemetryczne.");
             return true;
         } else {

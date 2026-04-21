@@ -5,15 +5,13 @@
 
 // ==================Definicje Globalne===================
 
-// Ustawienia telemetrii
-#define TELEMETRY_INTERVAL_MS 5000
-#define CONTROL_INTERVAL_MS 1000
-#define RECONNECT_INTERVAL_MS 5000
+
 
 // Ustawienia WiFi / AP
 #define WIFI_CHANNEL 11
 #define SSID "BOBER_AP"
 #define PASSWORD "bober123"
+#define RECONNECT_INTERVAL_MS 5000
 
 // Ustawienia UDP
 #define LOCAL_UDP_PORT 4444       // Port lokalny nasłuchu dla ESP32
@@ -88,7 +86,14 @@ String getJson(telemetryData& telemetry, deviceType myDeviceType) {
     doc["deviceType"] = static_cast<int>(myDeviceType); 
     doc["dataType"] = static_cast<int>(TELEMETRY);
     
-    doc["BTemp"] = telemetry.boatTemp;
+    doc["boatTemp"] = telemetry.boatTemp;
+    doc["serverTemp"] = telemetry.serverTemp;
+    doc["boatRssi"] = telemetry.boatRssi;
+    doc["sens1"] = telemetry.sens1;
+    doc["sens2"] = telemetry.sens2;
+    doc["sens3"] = telemetry.sens3;
+    doc["sens4"] = telemetry.sens4;
+
 
     String output;
     serializeJson(doc, output);
@@ -135,7 +140,8 @@ void unpackJson(JsonDocument& doc, controlData& control) {
  * @param telemetry 
  */
 void unpackJson(JsonDocument& doc, telemetryData& telemetry) {
-    telemetry.boatTemp = doc["BTemp"] | 0;
+    telemetry.boatTemp = doc["boatTemp"] | 0;
+    telemetry.boatRssi = doc["boatRssi"] | 0.0f;
     telemetry.sens1 = doc["sens1"] | 0;
     telemetry.sens2 = doc["sens2"] | 0;
     telemetry.sens3 = doc["sens3"] | 0.0f;
@@ -232,11 +238,12 @@ void setup(){
     Serial.println("Setup zakończony");
     setupWifi();
     LoRaStatus = setupLoRa();
-    Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
+    telemetry.boatTemp = 36.6f;
 }
 
 void loop(){
     currentTime = millis();
+
 
     if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS)&&androidDevice.connected){
         lastTelemetryTime = currentTime;
@@ -253,7 +260,7 @@ void loop(){
         }
         
     } else {
-        LoRaStatus = setupLoRa();
+        //LoRaStatus = setupLoRa();
     }
 
     receiveUDP();
