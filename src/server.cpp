@@ -5,8 +5,6 @@
 
 // ==================Definicje Globalne===================
 
-
-
 // Ustawienia WiFi / AP
 #define WIFI_CHANNEL 11
 #define SSID "BOBER_AP"
@@ -254,13 +252,24 @@ void loop(){
     if (LoRaStatus) {
         if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)) {
             lastControlTime = currentTime;
-            Serial.println("Wysyłanie danych sterujących do łódki: " + String(control.throttle));
-            sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
-            LoRa.receive();
+            if(!isReceiving()){
+                sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
+                LoRa.receive();
+            }
+            
+            
         }
         
     } else {
-        //LoRaStatus = setupLoRa();
+        LoRaStatus = setupLoRa();
+    }
+
+    if (newDataReady) {
+        newDataReady = false; 
+        bool decodeSuccess = decodeMessage(PacketID::ID_TELEMETRY);
+        if (!decodeSuccess) {
+            Serial.println("Nie można przetworzyć odebranej wiadomości telemetrycznej.");
+        }
     }
 
     receiveUDP();

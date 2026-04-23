@@ -9,12 +9,16 @@
 #define TELEMETRY_INTERVAL_MS 5000
 #define CONTROL_INTERVAL_MS 100
 
+#define NSS_PIN  5
+#define RST_PIN  14
+#define DIO0_PIN 33
+
 #define PWM_RESOULTION 8
 // ==================Struktury danych===================
 struct __attribute__((packed)) telemetryData {
     int8_t serverTemp;     
     int8_t boatTemp; 
-    int16_t boatRssi;  
+    int boatRssi;  
     int16_t sens1;         
     int16_t sens2;         
     float sens3;           
@@ -94,7 +98,7 @@ void onReceive(int packetSize) {
   }
   rxLength = incomingLength;
   newDataReady = true;
-  Serial.println("Received from: 0x" + String(sender, HEX));
+  //Serial.println("Received from: 0x" + String(sender, HEX));
 }
 
 /**
@@ -115,6 +119,35 @@ bool setupLoRa(uint8_t ssPin = 5, uint8_t rstPin = 14, uint8_t irqPin = 33) {
     //LoRa.setSpreadingFactor(9); // Jeśli będzie bardzo przerywać, włącz to || wolniejszy przesył danych
     Serial.println("LoRa zainicjalizowana pomyślnie.");
     return true;
+}
+
+/**
+ * @brief Funkcja sprawdzająca, czy moduł LoRa aktualnie odbiera dane.
+ * 
+ * @return true 
+ * @return false 
+ */
+bool isReceiving() {
+// Rozpoczęcie transakcji SPI (parametry zgodne z modułem SX1276)
+    SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(NSS_PIN, LOW); // Wybór układu (Chip Select)
+    
+    // Wysłanie adresu rejestru RegModemStat (0x18). 
+    // W układach Semtech bit nr 7 ustawiony na 0 oznacza operację ODCZYTU.
+    SPI.transfer(0x18 & 0x7F); 
+    
+    // Pobranie zawartości rejestru (wysyłamy puste 0x00, aby wygenerować zegar SCK)
+    uint8_t modemStat = SPI.transfer(0x00);
+    
+    digitalWrite(NSS_PIN, HIGH); // Koniec komunikacji z układem
+    SPI.endTransaction();
+    
+    // Bit 2 (RxOngoing) mówi o tym, czy moduł właśnie zasysa dane z eteru
+    bool rxOngoing = (modemStat & 0x04) != 0; 
+    // Bit 1 (SignalSynchronized) mówi o namierzeniu preambuły
+    bool signalSync = (modemStat & 0x02) != 0;
+    
+    return rxOngoing || signalSync;
 }
 // ==================Funkcje Daleki zasięg===================
 /**
@@ -164,7 +197,7 @@ bool decodeMessage(PacketID expectedPacketId) {
             // Kopiujemy bajty z bufora rxBuffer prosto do pamięci struktury 'control'
             memcpy(&control, rxBuffer, sizeof(controlData));
             telemetry.boatRssi = LoRa.packetRssi(); // Aktualizacja wartości RSSI na podstawie funkcji biblioteki LoRa
-            Serial.println("Wiadomosc zdekodowana: zaktualizowano dane sterujace.");
+            //Serial.println("Wiadomosc zdekodowana: zaktualizowano dane sterujace.");
             return true;
         } else {
             // Jeśli długość się nie zgadza, wypisujemy błąd i ułatwiamy diagnozę
@@ -180,8 +213,7 @@ bool decodeMessage(PacketID expectedPacketId) {
         if (rxLength == sizeof(telemetryData)) {
             // Kopiujemy bajty z bufora rxBuffer prosto do pamięci struktury 'telemetry'
             memcpy(&telemetry, rxBuffer, sizeof(telemetryData));
-            telemetry.boatRssi = LoRa.packetRssi(); // Aktualizacja wartości RSSI na podstawie funkcji biblioteki LoRa
-            Serial.println("Wiadomosc zdekodowana: zaktualizowano dane telemetryczne.");
+            //Serial.println("Wiadomosc zdekodowana: zaktualizowano dane telemetryczne.");
             return true;
         } else {
             // Jeśli długość się nie zgadza, wypisujemy błąd i ułatwiamy diagnozę
