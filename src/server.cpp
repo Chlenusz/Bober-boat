@@ -87,6 +87,8 @@ String getJson(telemetryData& telemetry, deviceType myDeviceType) {
     doc["boatTemp"] = telemetry.boatTemp;
     doc["serverTemp"] = telemetry.serverTemp;
     doc["boatRssi"] = telemetry.boatRssi;
+    doc["GPSLat"] = telemetry.GPSLat;
+    doc["GPSLng"] = telemetry.GPSLng;
     doc["sens1"] = telemetry.sens1;
     doc["sens2"] = telemetry.sens2;
     doc["sens3"] = telemetry.sens3;

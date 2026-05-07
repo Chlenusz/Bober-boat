@@ -19,6 +19,8 @@ struct __attribute__((packed)) telemetryData {
     int8_t serverTemp;     
     int8_t boatTemp; 
     int boatRssi;  
+    double GPSLat;
+    double GPSLng;
     int16_t sens1;         
     int16_t sens2;         
     float sens3;           
