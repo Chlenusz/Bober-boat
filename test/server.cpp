@@ -4,6 +4,7 @@
 #include "boat_lib.h"
 
 // ==================Definicje Globalne===================
+#define DEBUG
 
 // Ustawienia WiFi / AP
 #define WIFI_CHANNEL 11
@@ -26,7 +27,10 @@ unsigned long lastTelemetryTime = 0;
 unsigned long lastControlTime = 0;
 
 bool LoRaStatus = false;
-
+bool newRouteReceived = false;
+#ifdef DEBUG
+uint32_t packetUID = 0;
+#endif
 // ==================Konfiguracja Wifi===================
 
 bool setupWifi() {
@@ -84,16 +88,16 @@ String getJson(telemetryData& telemetry, deviceType myDeviceType) {
     doc["deviceType"] = static_cast<int>(myDeviceType); 
     doc["dataType"] = static_cast<int>(TELEMETRY);
     
+    // Surowe dane, które nie potrzebują matematyki (1 bajtowe)
     doc["boatTemp"] = telemetry.boatTemp;
     doc["serverTemp"] = telemetry.serverTemp;
     doc["boatRssi"] = telemetry.boatRssi;
-    doc["GPSLat"] = telemetry.GPSLat;
-    doc["GPSLng"] = telemetry.GPSLng;
-    doc["sens1"] = telemetry.sens1;
-    doc["sens2"] = telemetry.sens2;
-    doc["sens3"] = telemetry.sens3;
-    doc["sens4"] = telemetry.sens4;
-
+    doc["PT100"] = telemetry.PT100;
+    doc["GPSLat"] = (double)telemetry.GPSLat / 10000000.0;
+    doc["GPSLng"] = (double)telemetry.GPSLng / 10000000.0;
+    
+    doc["DHTTemp"] = (float)telemetry.DHTTemp / 10.0f;
+    doc["DHTHumid"] = (float)telemetry.DHTHumid / 10.0f;
 
     String output;
     serializeJson(doc, output);
@@ -140,12 +144,44 @@ void unpackJson(JsonDocument& doc, controlData& control) {
  * @param telemetry 
  */
 void unpackJson(JsonDocument& doc, telemetryData& telemetry) {
+    // Odczyt prostych wartości 1-bajtowych
+    telemetry.serverTemp = doc["serverTemp"] | 0;
     telemetry.boatTemp = doc["boatTemp"] | 0;
-    telemetry.boatRssi = doc["boatRssi"] | 0.0f;
-    telemetry.sens1 = doc["sens1"] | 0;
-    telemetry.sens2 = doc["sens2"] | 0;
-    telemetry.sens3 = doc["sens3"] | 0.0f;
-    telemetry.sens4 = doc["sens4"] | 0.0f;
+    telemetry.boatRssi = doc["boatRssi"] | 0;
+    telemetry.PT100 = doc["PT100"] | 0;
+
+    // Odczyt ułamków i kompresja do int32_t (Fixed-Point)
+    double lat = doc["GPSLat"] | 0.0;
+    double lng = doc["GPSLng"] | 0.0;
+    telemetry.GPSLat = (int32_t)(lat * 10000000.0);
+    telemetry.GPSLng = (int32_t)(lng * 10000000.0);
+
+    float dhtT = doc["DHTTemp"] | 0.0f;
+    float dhtH = doc["DHTHumid"] | 0.0f;
+    telemetry.DHTTemp = (int32_t)(dhtT * 10.0f);
+    telemetry.DHTHumid = (int32_t)(dhtH * 10.0f);
+}
+/**
+ * @brief Funkcja odpowiedzialna za rozpakowanie danych trasy z formatu JSON do struktury routeData.
+ * 
+ * @param doc 
+ * @param route 
+ */
+void unpackJson(JsonDocument& doc, routeData& route) {
+    JsonArray routeArray = doc["route"];
+    route.pointsCount = routeArray.size();
+    
+    // Zabezpieczenie na poziomie serwera (na wszelki wypadek)
+    if (route.pointsCount > 30) route.pointsCount = 30;
+
+    for (int i = 0; i < route.pointsCount; i++) {
+        // Wyciągamy double i od razu konwertujemy na Fixed-Point dla LoRa (mnożenie)
+        double lat = routeArray[i]["lat"];
+        double lng = routeArray[i]["lng"];
+        
+        route.waypoints[i].lat = (int32_t)(lat * 10000000.0);
+        route.waypoints[i].lng = (int32_t)(lng * 10000000.0);
+    }
 }
 /**
  * @brief Funkcja odpowiedzialna za wysyłanie wiadomości przez UDP.
@@ -175,7 +211,8 @@ void sendUDP(deviceCredentials& targetDevice, const String& message) {
         return;
     }
 
-    Serial.println("Wysłano pakiet UDP do "+String(targetDevice.ip.toString()));
+    Serial.println("Wysłano pakiet UDP do "+String(targetDevice.ip.toString())+" ID:"+String(packetUID));
+    packetUID++;
 }
 /**
  * @brief Funkcja odpowiedzialna za odbieranie wiadomości przez UDP.
@@ -222,7 +259,19 @@ void receiveUDP() {
                 break;
             case TELEMETRY:
                 unpackJson(doc, telemetry);
-                Serial.println("Odebrano dane telemetryczne: BoatTemp = " + String(telemetry.boatTemp) + ", Sens1 = " + String(telemetry.sens1) + ", Sens2 = " + String(telemetry.sens2) + ", Sens3 = " + String(telemetry.sens3) + ", Sens4 = " + String(telemetry.sens4));
+                Serial.println("Odebrano telemetrię: BoatTemp = " + String(telemetry.boatTemp) + 
+               "°C, PT100 = " + String(telemetry.PT100) + 
+               "°C, DHT Temp = " + String(telemetry.DHTTemp / 10.0f, 1) + 
+               "°C, DHT Humid = " + String(telemetry.DHTHumid / 10.0f, 1) + 
+               "%, RSSI = " + String(telemetry.boatRssi) + " dBm");
+                break;
+            case ROUTE:
+                unpackJson(doc, route);
+                newRouteReceived = true;     // Podnosimy flagę dla pętli loop
+                Serial.println("Odebrano nową trasę z Androida! Punktów: " + String(route.pointsCount));
+                break;
+            case CONNECT:
+                Serial.println("Odebrano żądanie połączenia.");
                 break;
             default:
                 break;
@@ -244,8 +293,14 @@ void setup(){
 void loop(){
     currentTime = millis();
 
+    if (WiFi.softAPgetStationNum() == 0) {
+        if (androidDevice.connected) {
+            androidDevice.connected = false;
+            Serial.println("Urządzenie odłączone od Wi-Fi. Wstrzymuję wysyłanie UDP.");
+        }
+    }
 
-    if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS)&&androidDevice.connected){
+    if((currentTime-lastTelemetryTime >= TELEMETRY_INTERVAL_MS) && androidDevice.connected){
         lastTelemetryTime = currentTime;
         telemetry.serverTemp = temperatureRead();
         sendUDP(androidDevice, getJson(telemetry,SERVER));
@@ -258,17 +313,21 @@ void loop(){
                 sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
                 LoRa.receive();
             }
-            
-            
         }
-        
+        if (newRouteReceived) {
+            if(!isReceiving()){
+                newRouteReceived = false; // Reset flagi
+                sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, route);
+                LoRa.receive();
+            }
+        }
     } else {
         LoRaStatus = setupLoRa();
     }
 
     if (newDataReady) {
         newDataReady = false; 
-        bool decodeSuccess = decodeMessage(PacketID::ID_TELEMETRY);
+        bool decodeSuccess = decodeMessage(packetId);
         if (!decodeSuccess) {
             Serial.println("Nie można przetworzyć odebranej wiadomości telemetrycznej.");
         }

@@ -1,7 +1,9 @@
 #include "boat_lib.h"
+#include "Navigation.h"
 #include "DHT.h"
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
+#include <PID_v1.h>
 
 // ==================Definicje Globalne===================
 
@@ -24,11 +26,21 @@ unsigned long lastTelemetryTime = 0;
 unsigned long lastDHTTime = 0;
 unsigned long lastControlTime = 0;
 
+double distanceToTarget = 0.0;
+double course = 0.0;
+
 bool LoRaStatus = false;
+
+double Setpoint, Input, Output;
+double Kp=2.0, Ki=0.5, Kd=1.0;
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 DHT dht(DTH_PIN, DHTTYPE); // Inicjalizacja czujnika DHT11
 TinyGPSPlus gps; // Inicjalizacja obiektu TinyGPSPlus do obsługi GPS
 HardwareSerial gpsSerial(2); // Inicjalizacja sprzętowego UART2 na wybranych pinach
+#ifndef DEBUG
+NavigationSystem navigation; // Inicjalizacja systemu nawigacji
+#endif
 
 // ===================== Funkcje Lokalne ==========================
 void setThrottle(int8_t value) {
@@ -37,7 +49,23 @@ void setThrottle(int8_t value) {
     Serial.println("Ustawianie przepustnicy na wartość: " + String(value));
     #endif
 }
+#ifndef DEBUG
+void computeWaypoints() {
+    navigation.update(); // Aktualizacja danych nawigacyjnych
 
+    Setpoint = TinyGPSPlus::courseTo(telemetry.GPSLat, telemetry.GPSLng, route.waypoints[0].lat, route.waypoints[0].lng);
+    Input = navigation.getHeading();
+    double headingError = Setpoint - Input;
+
+    if (headingError > 180) headingError -= 360;
+    if (headingError < -180) headingError += 360;
+    Input = headingError;
+    Setpoint = 0; // Chcemy, aby błąd wynosił 0
+    myPID.Compute();
+    // sterowanie serwem
+    //rudder = 90+output; // Przykładowa konwersja z PID na kąt steru
+}
+#endif
 
 // ===================== Wstępna konfiguracja ======================
 void setup(){
@@ -47,8 +75,15 @@ void setup(){
 
     gpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
+    myPID.SetMode(AUTOMATIC);
+    myPID.SetOutputLimits(-45, 45);
+
     ledcSetup(0,500, 8); // Konfiguracja kanału PWM: kanał 0, częstotliwość 500 Hz, rozdzielczość 8 bitów
     ledcAttachPin(PWM_PIN, 0); // Przypisanie pinu do kanału PWM
+
+    #ifndef DEBUG
+    navigation.begin(); // Inicjalizacja systemu nawigacji
+    #endif
 
     LoRaStatus = setupLoRa(NSS_PIN, RST_PIN, DIO0_PIN);
     Serial.println("LoRa setup: " + String(LoRaStatus ? "sukces" : "niepowodzenie"));
@@ -59,14 +94,22 @@ void setup(){
 void loop(){
     currentTime = millis();
 
+    //Konwersja waypointów z formatu int32_t do double dla pierwszego punktu docelowego
+    if(route.pointsCount > 0){
+        double targetLat = (double)route.waypoints[0].lat / 10000000.0;
+        double targetLng = (double)route.waypoints[0].lng / 10000000.0;
+    }
+
+    //computeWaypoints();
+
     while (gpsSerial.available() > 0) {
         gps.encode(gpsSerial.read());
     }
 
     if (gps.location.isUpdated()) {
-        telemetry.GPSLat = gps.location.lat();
-        telemetry.GPSLng = gps.location.lng();
-        Serial.println("Aktualizacja danych GPS: Lat = " + String(telemetry.GPSLat, 6) + ", Lng = " + String(telemetry.GPSLng, 6));
+        telemetry.GPSLat = gps.location.lat()*10000000.0;
+        telemetry.GPSLng = gps.location.lng()*10000000.0;
+        Serial.println("Aktualizacja danych GPS: Lat = " + String(telemetry.GPSLat/10000000.0, 6) + ", Lng = " + String(telemetry.GPSLng/10000000.0, 6));
     }
 
     if (LoRaStatus){
@@ -74,7 +117,6 @@ void loop(){
             lastTelemetryTime = currentTime;
             telemetry.boatTemp = temperatureRead();
             telemetry.boatRssi = LoRa.packetRssi();
-            Serial.println("LoRa Rssi:"+String(telemetry.boatRssi));
             sendMessage(SERVER_ADDRESS, BOAT_ADDRESS, telemetry);
             LoRa.receive();
         }
@@ -100,8 +142,8 @@ void loop(){
 
     if(currentTime - lastDHTTime >= DHT_INTERVAL) {
         lastDHTTime = currentTime;
-        telemetry.sens3 = dht.readTemperature();
-        telemetry.sens4 = dht.readHumidity();
+        telemetry.DHTTemp = dht.readTemperature();
+        telemetry.DHTHumid = dht.readHumidity();
     }
 
 }

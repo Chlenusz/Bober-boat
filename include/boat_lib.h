@@ -6,7 +6,7 @@
 #include <LoRa.h> 
 
 // ==================Definicje Globalne===================
-#define TELEMETRY_INTERVAL_MS 5000
+#define TELEMETRY_INTERVAL_MS 1000
 #define CONTROL_INTERVAL_MS 100
 
 #define NSS_PIN  5
@@ -18,18 +18,27 @@
 struct __attribute__((packed)) telemetryData {
     int8_t serverTemp;     
     int8_t boatTemp; 
-    int boatRssi;  
-    double GPSLat;
-    double GPSLng;
-    int16_t sens1;         
-    int16_t sens2;         
-    float sens3;           
-    float sens4;          
+    int8_t boatRssi;  
+    int8_t PT100;   
+    int32_t GPSLat;
+    int32_t GPSLng;     
+    int32_t DHTTemp;           
+    int32_t DHTHumid;    
+};
+
+struct __attribute__((packed)) Waypoint {
+    int32_t lat; 
+    int32_t lng; 
 };
 
 struct __attribute__((packed)) controlData {
     uint16_t rudder;      
-    uint16_t throttle;        
+    uint16_t throttle;
+};
+
+struct __attribute__((packed)) routeData {
+    uint8_t pointsCount;  
+    Waypoint waypoints[30];
 };
 
 struct deviceCredentials{
@@ -40,7 +49,9 @@ struct deviceCredentials{
 
 enum dataType {
     TELEMETRY,
-    CONTROL
+    CONTROL,
+    ROUTE,
+    CONNECT
 };
 
 enum deviceType {
@@ -56,14 +67,14 @@ enum rudderType {
 
 enum PacketID : uint8_t {
     ID_TELEMETRY = 1,
-    ID_CONTROL = 2
+    ID_CONTROL = 2,
+    ID_ROUTE = 3
 };
 // ==================Definicje globalne===================
 const uint8_t BROADCAST_ADDRESS = 0xFF;
 const uint8_t BOAT_ADDRESS = 0xAA;
 const uint8_t SERVER_ADDRESS = 0xBB;
 
-byte msgCount = 0;  
 uint8_t rxBuffer[256];      // Bufor na odebrane bajty
 uint8_t rxLength = 0;       // Zapisana długość odebranej wiadomości
 
@@ -73,6 +84,7 @@ PacketID packetId;
 
 telemetryData telemetry; // Struktura przechowująca dane telemetryczne
 controlData control; // Struktura przechowująca dane sterujące
+routeData route; // Struktura przechowująca dane trasy
 // ==================Konfiguracja LoRa===================
 /**
  * @brief Funkcja odpowiedzialna za obsługę odebranych wiadomości LoRa.
@@ -81,28 +93,30 @@ controlData control; // Struktura przechowująca dane sterujące
  * @param packetSize 
  */
 void onReceive(int packetSize) {
-  if (packetSize == 0) return;          // if there's no packet, return
+    if (packetSize == 0) return;          // if there's no packet, return
 
-  // read packet header bytes:
-  byte recipient = LoRa.read();          // recipient address
-  byte sender = LoRa.read();            // sender address
-  byte incomingMsgId = LoRa.read();     // incoming msg ID
-  byte incomingLength = LoRa.read();    // incoming msg length
+    // read packet header bytes:
+    byte recipient = LoRa.read();        // recipient address
+    byte sender = LoRa.read();           // sender address
+    byte receivedPacketId = LoRa.read(); // check if the recipient is the device itself or a broadcast message
+    byte incomingLength = LoRa.read();   // incoming packet length
 
-  int i = 0;
-  while (LoRa.available() && i < sizeof(rxBuffer)) {
-    rxBuffer[i] = LoRa.read();
-    i++;
-  }
+    int i = 0;
+    while (LoRa.available() && i < sizeof(rxBuffer)) {
+        rxBuffer[i] = LoRa.read();
+        i++;
+    }
 
-  if (incomingLength != i) {   // check length for error
-    return;                             
-  }
-  rxLength = incomingLength;
-  newDataReady = true;
-  //Serial.println("Received from: 0x" + String(sender, HEX));
+    if (incomingLength != i) {   // check length for error
+        Serial.println("Blad: ucieta ramka LoRa!");
+        Serial.println("Oczekiwano bajtow: " + String(incomingLength) + ", odebrano bajtow: " + String(i));
+        return;                             
+    }
+    packetId = static_cast<PacketID>(receivedPacketId);
+    rxLength = incomingLength;
+    newDataReady = true;
+    //Serial.println("Received from: 0x" + String(sender, HEX));
 }
-
 /**
  * @brief Funkcja odpowiedzialna za konfigurację modułu LoRa.
  * 
@@ -115,14 +129,13 @@ bool setupLoRa(uint8_t ssPin = 5, uint8_t rstPin = 14, uint8_t irqPin = 33) {
         Serial.println("Błąd inicjalizacji LoRa! Sprawdź podłączenie SPI.");
         return false;
     }
-    //LoRa.enableCrc();
+    LoRa.enableCrc();
     //LoRa.setCodingRate4(8);
     LoRa.onReceive(onReceive);
     //LoRa.setSpreadingFactor(9); // Jeśli będzie bardzo przerywać, włącz to || wolniejszy przesył danych
     Serial.println("LoRa zainicjalizowana pomyślnie.");
     return true;
 }
-
 /**
  * @brief Funkcja sprawdzająca, czy moduł LoRa aktualnie odbiera dane.
  * 
@@ -160,13 +173,13 @@ bool isReceiving() {
  * @param telemetry Dane telemetryczne do wysłania
  */
 void sendMessage(uint8_t destinationAddress, uint8_t senderAddress, const telemetryData& telemetry) {
-  LoRa.beginPacket();                   // start packet
-  LoRa.write(destinationAddress);           // add destination address
-  LoRa.write(senderAddress);             // add sender address
-  LoRa.write(msgCount);                 // add message ID
-  LoRa.write(sizeof(telemetryData));        // add payload length
-  LoRa.write((const uint8_t*)&telemetry, sizeof(telemetryData));                 // add payload
-  LoRa.endPacket();                     // finish packet and send it
+    LoRa.beginPacket();                   // start packet
+    LoRa.write(destinationAddress);           // add destination address
+    LoRa.write(senderAddress);             // add sender address
+    LoRa.write(PacketID::ID_TELEMETRY); // add packet type
+    LoRa.write(sizeof(telemetryData));        // add payload length
+    LoRa.write((const uint8_t*)&telemetry, sizeof(telemetryData));                 // add payload
+    LoRa.endPacket();                     // finish packet and send it
 }
 /**
  * @brief Funkcja odpowiedzialna za wysyłanie danych sterujących przez LoRa.
@@ -176,13 +189,30 @@ void sendMessage(uint8_t destinationAddress, uint8_t senderAddress, const teleme
  * @param control 
  */
 void sendMessage(uint8_t destinationAddress, uint8_t senderAddress, const controlData& control) {
-  LoRa.beginPacket();                   // start packet
-  LoRa.write(destinationAddress);           // add destination address
-  LoRa.write(senderAddress);             // add sender address
-  LoRa.write(msgCount);                 // add message ID
-  LoRa.write(sizeof(controlData));        // add payload length
-  LoRa.write((const uint8_t*)&control, sizeof(controlData));                 // add payload
-  LoRa.endPacket();                     // finish packet and send it
+    LoRa.beginPacket();                   // start packet
+    LoRa.write(destinationAddress);           // add destination address
+    LoRa.write(senderAddress);             // add sender address
+    LoRa.write(PacketID::ID_CONTROL); // add packet type
+    LoRa.write(sizeof(controlData));        // add payload length
+    LoRa.write((const uint8_t*)&control, sizeof(controlData));                 // add payload
+    LoRa.endPacket();                     // finish packet and send it
+}
+/**
+ * @brief Funkcja odpowiedzialna za wysyłanie danych trasy przez LoRa.
+ * 
+ * @param destinationAddress 
+ * @param senderAddress 
+ * @param route 
+ */
+void sendMessage(uint8_t destinationAddress, uint8_t senderAddress, const routeData& route) {
+    size_t payloadSize = sizeof(route.pointsCount) + (route.pointsCount * sizeof(Waypoint));
+    LoRa.beginPacket();                   // start packet
+    LoRa.write(destinationAddress);           // add destination address
+    LoRa.write(senderAddress);             // add sender address
+    LoRa.write(PacketID::ID_ROUTE); // add packet type
+    LoRa.write(payloadSize);        // add payload length
+    LoRa.write((const uint8_t*)&route, payloadSize);                 // add payload
+    LoRa.endPacket();                     // finish packet and send it
 }
 /**
  * @brief Funkcja odpowiedzialna za wysyłanie danych sterujących przez LoRa.
@@ -191,43 +221,59 @@ void sendMessage(uint8_t destinationAddress, uint8_t senderAddress, const contro
  * @return true 
  * @return false 
  */
-bool decodeMessage(PacketID expectedPacketId) {
-    if (PacketID::ID_CONTROL == expectedPacketId) {
+bool decodeMessage(PacketID PacketId) {
+    switch (PacketId) {
+        case PacketID::ID_CONTROL:
+            if (rxLength == sizeof(controlData)) {
+                memcpy(&control, rxBuffer, sizeof(controlData));
+                telemetry.boatRssi = LoRa.packetRssi(); 
+                return true;
+            } else {
+                Serial.print("Blad dekodowania sterowania! Oczekiwano: ");
+                Serial.print(sizeof(controlData));
+                Serial.print(" bajtow, odebrano: ");
+                Serial.print(rxLength);
+                Serial.println(" bajtow.");
+                return false;
+            }
 
-        // Sprawdzamy, czy odebrana ilość bajtów pasuje do rozmiaru struktury controlData
-        if (rxLength == sizeof(controlData)) {
-            // Kopiujemy bajty z bufora rxBuffer prosto do pamięci struktury 'control'
-            memcpy(&control, rxBuffer, sizeof(controlData));
-            telemetry.boatRssi = LoRa.packetRssi(); // Aktualizacja wartości RSSI na podstawie funkcji biblioteki LoRa
-            //Serial.println("Wiadomosc zdekodowana: zaktualizowano dane sterujace.");
-            return true;
-        } else {
-            // Jeśli długość się nie zgadza, wypisujemy błąd i ułatwiamy diagnozę
-            Serial.print("Blad dekodowania! Oczekiwano: ");
-            Serial.print(sizeof(controlData));
-            Serial.print(" bajtow, odebrano: ");
-            Serial.print(rxLength);
-            Serial.println(" bajtow.");
+        case PacketID::ID_TELEMETRY:
+            if (rxLength == sizeof(telemetryData)) {
+                memcpy(&telemetry, rxBuffer, sizeof(telemetryData));
+                return true;
+            } else {
+                Serial.print("Blad dekodowania telemetrii! Oczekiwano: ");
+                Serial.print(sizeof(telemetryData));
+                Serial.print(" bajtow, odebrano: ");
+                Serial.print(rxLength);
+                Serial.println(" bajtow.");
+                return false;
+            }
+
+        case PacketID::ID_ROUTE: { 
+            // Wyciągamy pierwszy bajt (ilość punktów) z odebranego bufora
+            uint8_t receivedPointsCount = rxBuffer[0]; 
+            
+            // Obliczamy, ile fizycznie powinna ważyć paczka
+            size_t expectedSize = sizeof(route.pointsCount) + (receivedPointsCount * sizeof(Waypoint));
+
+            // Sprawdzamy, czy waga się zgadza i czy nie wykracza poza rozmiar struktury
+            if (rxLength == expectedSize && expectedSize <= sizeof(routeData)) {
+                memcpy(&route, rxBuffer, rxLength);
+                Serial.println("Zaladowano nowa trase GPS! Punktow: " + String(receivedPointsCount));
+                return true;
+            } else {
+                Serial.print("Blad dekodowania trasy! Oczekiwano: ");
+                Serial.print(expectedSize);
+                Serial.print(" bajtow, odebrano: ");
+                Serial.print(rxLength);
+                Serial.println(" bajtow.");
+                return false;
+            }
+        } // Koniec klamer dla ID_ROUTE
+
+        default:
+            Serial.println("Nieznany typ pakietu do dekodowania.");
             return false;
-        }
-    } else if(PacketID::ID_TELEMETRY == expectedPacketId) {
-        // Sprawdzamy, czy odebrana ilość bajtów pasuje do rozmiaru struktury telemetryData
-        if (rxLength == sizeof(telemetryData)) {
-            // Kopiujemy bajty z bufora rxBuffer prosto do pamięci struktury 'telemetry'
-            memcpy(&telemetry, rxBuffer, sizeof(telemetryData));
-            //Serial.println("Wiadomosc zdekodowana: zaktualizowano dane telemetryczne.");
-            return true;
-        } else {
-            // Jeśli długość się nie zgadza, wypisujemy błąd i ułatwiamy diagnozę
-            Serial.print("Blad dekodowania! Oczekiwano: ");
-            Serial.print(sizeof(telemetryData));
-            Serial.print("bajtow, odebrano: ");
-            Serial.print(rxLength);
-            Serial.println(" bajtow.");
-            return false;
-        }
-    } else {
-        Serial.println("Nieznany typ pakietu do dekodowania.");
-        return false;
     }
 }
