@@ -32,8 +32,8 @@ struct __attribute__((packed)) Waypoint {
 };
 
 struct __attribute__((packed)) controlData {
-    uint16_t rudder;      
-    uint16_t throttle;
+    int16_t rudder;      
+    int16_t throttle;
 };
 
 struct __attribute__((packed)) routeData {
@@ -58,11 +58,6 @@ enum deviceType {
     ANDROID,
     SERVER,
     UNKONWN
-};
-
-enum rudderType {
-    LEFT,
-    RIGHT
 };
 
 enum PacketID : uint8_t {
@@ -270,7 +265,7 @@ bool decodeMessage(PacketID PacketId) {
                 Serial.println(" bajtow.");
                 return false;
             }
-        } // Koniec klamer dla ID_ROUTE
+        }
 
         default:
             Serial.println("Nieznany typ pakietu do dekodowania.");

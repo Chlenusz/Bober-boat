@@ -6,7 +6,7 @@
 #include <Adafruit_Sensor.h>
 #include <QMC5883LCompass.h>
 #include <MadgwickAHRS.h>
-
+/** @brief Navigation System class */
 class NavigationSystem {
 private:
     Adafruit_MPU6050 mpu;
@@ -20,6 +20,11 @@ private:
     const float declinationAngle = 5.5; 
 
 public:
+    /**
+     * @brief Initialize the navigation system
+     * 
+     * @return true | false
+     */
     bool begin() {
         Wire.begin(); 
         
@@ -28,29 +33,30 @@ public:
             return false;
         }
         mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-        // Żyroskop na największą czułość (250 stopni/s) - idealne dla powolnej łódki
         mpu.setGyroRange(MPU6050_RANGE_250_DEG); 
         mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
         compass.init();
         
-        // Inicjalizacja filtru Madgwicka (szacowana częstotliwość próbkowania ok. 100 Hz)
+        // Inicjalizacja filtru Madgwicka
         filter.begin(100); 
         lastUpdate = micros();
         
         Serial.println("System Nawigacji (Madgwick AHRS) zainicjowany.");
         return true;
     }
-
-    // Ta funkcja MUSI być wywoływana w głównej pętli loop() jak najczęściej
+    /**
+     * @brief Update the navigation system
+     * 
+     */
     void update() {
         unsigned long now = micros();
         
-        // Wykonujemy aktualizację co 10 000 mikrosekund (10 ms -> 100 Hz)
+        // Wykonujemy aktualizację co 10 ms (100 Hz)
         if (now - lastUpdate >= 10000) {
             lastUpdate = now;
 
-            // 1. Pobranie danych z MPU6050 (Akcelerometr i Żyroskop)
+            // 1. Pobranie danych z MPU6050 
             sensors_event_t a, g, temp;
             mpu.getEvent(&a, &g, &temp);
 
@@ -61,13 +67,12 @@ public:
             float magZ = compass.getZ();
 
             // 3. Konwersja żyroskopu: Biblioteka Adafruit zwraca radiany/s, 
-            // a filtr Madgwicka wymaga stopni/s. (1 radian = ~57.2958 stopni)
+            // a filtr Madgwicka wymaga stopni/s.
             float gyroX_deg = g.gyro.x * 57.2958f;
             float gyroY_deg = g.gyro.y * 57.2958f;
             float gyroZ_deg = g.gyro.z * 57.2958f;
 
-            // 4. Magia fuzji czujników (Sensor Fusion)
-            // Podajemy: żyroskop, akcelerometr oraz magnetometr do filtru
+            // 4. Aktualizujemy filtr Madgwicka z aktualnymi danymi
             filter.update(
                 gyroX_deg, gyroY_deg, gyroZ_deg, 
                 a.acceleration.x, a.acceleration.y, a.acceleration.z, 
@@ -82,14 +87,23 @@ public:
             if (currentHeading > 360.0) currentHeading -= 360.0;
         }
     }
-
-    // Zwraca gładki, skompensowany kurs łodzi
-    float getHeading() {
-        return currentHeading;
-    }
-    
-    // Dodatkowe funkcje (gdybyś chciał robić alarm wywrotki łodzi)
+    /**
+     * @brief Get the Heading correction
+     * 
+     * @return float 
+     */
+    float getHeading() { return currentHeading;}
+    /**
+     * @brief Get the Roll object
+     * 
+     * @return float 
+     */
     float getRoll() { return filter.getRoll(); }
+    /**
+     * @brief Get the Pitch object
+     * 
+     * @return float 
+     */
     float getPitch() { return filter.getPitch(); }
 };
 
