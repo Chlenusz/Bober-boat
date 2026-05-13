@@ -6,6 +6,8 @@
 #include <PID_v1.h>
 
 // ==================Definicje Globalne===================
+#define I2C_SDA_PIN 21
+#define I2C_SCL_PIN 22
 
 #define PWM_PIN 25
 
@@ -13,9 +15,8 @@
 #define DHT_INTERVAL 5000
 #define DHTTYPE DHT11
 
-// Definicje pinów GPS 
-#define GPS_RX_PIN 16 // RX modułu NEO-6M
-#define GPS_TX_PIN 17 // TX modułu NEO-6M
+#define GPS_RX_PIN 16 
+#define GPS_TX_PIN 17 
 #define GPS_BAUD 9600
 
 #define DEBUG
@@ -145,5 +146,4 @@ void loop(){
         telemetry.DHTTemp = dht.readTemperature();
         telemetry.DHTHumid = dht.readHumidity();
     }
-
 }
