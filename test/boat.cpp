@@ -9,7 +9,8 @@
 #define I2C_SDA_PIN 21
 #define I2C_SCL_PIN 22
 
-#define PWM_PIN 25
+#define MOTOR_PIN 32
+#define MOTOR_STATE_PIN 25
 
 #define DTH_PIN 26
 #define DHT_INTERVAL 5000
@@ -44,10 +45,21 @@ NavigationSystem navigation; // Inicjalizacja systemu nawigacji
 #endif
 
 // ===================== Funkcje Lokalne ==========================
-void setThrottle(int8_t value) {
-    ledcWrite(0, value); // Ustawienie wartości PWM na podstawie wartości przepustnicy
+void setThrottle(uint16_t value) {
+    // 1. Mapowanie z zakresu serwera (0 - 65000) na zakres PWM 8-bit (0 - 255)
+    uint8_t pwmValue = map(value, 0, 65000, 0, 255);
+    
+    // Zabezpieczenie przed dziwnymi wartościami z poza zakresu
+    if (value > 65000) pwmValue = 255; 
+
+    // 2. Wysterowanie silnika
+    ledcWrite(0, pwmValue); 
+    
+    // 3. Włączenie pinu stanu (używaj digitalWrite, a nie analogWrite do stanów HIGH/LOW!)
+    digitalWrite(MOTOR_STATE_PIN, pwmValue > 0 ? HIGH : LOW); 
+
     #ifdef DEBUG
-    Serial.println("Ustawianie przepustnicy na wartość: " + String(value));
+    Serial.println("Silnik RAW: " + String(value) + " | Silnik PWM (0-255): " + String(pwmValue));
     #endif
 }
 #ifndef DEBUG
@@ -79,8 +91,9 @@ void setup(){
     myPID.SetMode(AUTOMATIC);
     myPID.SetOutputLimits(-45, 45);
 
+    pinMode(MOTOR_STATE_PIN, OUTPUT); // Pin do monitorowania stanu silnika (np. włączony/wyłączony)
     ledcSetup(0,500, 8); // Konfiguracja kanału PWM: kanał 0, częstotliwość 500 Hz, rozdzielczość 8 bitów
-    ledcAttachPin(PWM_PIN, 0); // Przypisanie pinu do kanału PWM
+    ledcAttachPin(MOTOR_PIN, 0); // Przypisanie pinu do kanału PWM
 
     #ifndef DEBUG
     navigation.begin(); // Inicjalizacja systemu nawigacji
@@ -137,8 +150,9 @@ void loop(){
 
     if (currentTime-lastControlTime >= CONTROL_INTERVAL_MS) {
         lastControlTime = currentTime;
+        Serial.println("Aktualizacja sterowania: " + String(control.throttle));
 
-        //setThrottle(control.throttle);
+        setThrottle(control.throttle);
     }
 
     if(currentTime - lastDHTTime >= DHT_INTERVAL) {

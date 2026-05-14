@@ -130,12 +130,17 @@ String getJson(controlData& control, deviceType myDeviceType) {
  * @param control 
  */
 void unpackJson(JsonDocument& doc, controlData& control) {
-    float temp = doc["throttle"] | 0.0f; // Domyślna wartość 0
-    if (temp < 0.0f) temp = 0.0f; // Zapewnienie, że wartość nie jest ujemna
-    control.throttle = (uint16_t)round(temp*pow(2, PWM_RESOULTION)); // Konwersja float do uint16_t z zaokrągleniem
-    temp = doc["rudder"] | 0.0f; // Domyślna wartość 0
-    if (temp < 0.0f) temp = 0.0f; // Zapewnienie, że wartość nie jest ujemna
-    control.rudder = (uint16_t)round(temp*pow(2, PWM_RESOULTION)); // Konwersja float do uint16_t z zaokrągleniem
+    // Odczyt przepustnicy
+    float tempT = doc["throttle"] | 0.0f; 
+    if (tempT < 0.0f) tempT = 0.0f; 
+    if (tempT > 65000.0f) tempT = 65000.0f; // Limit bezpieczeństwa
+    control.throttle = (uint16_t)tempT;     // Bezpośrednie przypisanie!
+
+    // Odczyt steru (rudder)
+    float tempR = doc["rudder"] | 0.0f; 
+    if (tempR < 0.0f) tempR = 0.0f; 
+    if (tempR > 65000.0f) tempR = 65000.0f; // Limit bezpieczeństwa
+    control.rudder = (uint16_t)tempR;       // Bezpośrednie przypisanie!
 }
 /**
  * @brief Funkcja odpowiedzialna za rozpakowanie danych telemetrycznych z formatu JSON do struktury telemetryData.

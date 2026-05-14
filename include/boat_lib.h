@@ -33,7 +33,7 @@ struct __attribute__((packed)) Waypoint {
 
 struct __attribute__((packed)) controlData {
     int16_t rudder;      
-    int16_t throttle;
+    uint16_t throttle;
 };
 
 struct __attribute__((packed)) routeData {
