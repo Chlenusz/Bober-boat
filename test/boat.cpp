@@ -162,20 +162,22 @@ void loop(){
         }
     }
 
-    if (currentTime-lastControlTime >= CONTROL_INTERVAL_MS) {
-        lastControlTime = currentTime;
-        Serial.println("Aktualizacja sterowania: " + String(control.throttle)+", " + String(control.rudder));
-        if (!failsafeStatus && (currentTime - failSafeTimer >= FAILSAFE_TIMEOUT_MS)) {
+    if (currentTime - lastControlTime >= CONTROL_INTERVAL_MS) {
+    lastControlTime = currentTime;
+    
+    if (currentTime - failSafeTimer >= FAILSAFE_TIMEOUT_MS) {
+        if (!failsafeStatus) {
+            failsafeStatus = true; 
+            Serial.println("Tryb awaryjny aktywowany! Brak aktualizacji sterowania przez " + String(FAILSAFE_TIMEOUT_MS) + " ms.");
             setRudder(90);
             setThrottle(0);
-            failsafeStatus = true; // Włącz tryb awaryjny
-            Serial.println("Tryb awaryjny aktywowany! Brak aktualizacji sterowania przez " + String(FAILSAFE_TIMEOUT_MS) + " ms.");
-        }else{
-            setRudder(control.rudder);
-            setThrottle(control.throttle);
         }
-        
+    } else {
+        Serial.println("Aktualizacja sterowania: " + String(control.throttle)+", " + String(control.rudder));
+        setRudder(control.rudder);
+        setThrottle(control.throttle);
     }
+}
 
     if(currentTime - lastDHTTime >= DHT_INTERVAL) {
         lastDHTTime = currentTime;
