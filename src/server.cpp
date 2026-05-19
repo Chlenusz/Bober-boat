@@ -314,9 +314,10 @@ void loop(){
     if (LoRaStatus) {
         if ((currentTime - lastControlTime >= CONTROL_INTERVAL_MS)) {
             lastControlTime = currentTime;
-            if(!isReceiving()){
-                sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
+            sendMessage(BOAT_ADDRESS, SERVER_ADDRESS, control);
                 LoRa.receive();
+            if(!isReceiving()){
+                
             }
         }
         if (newRouteReceived) {

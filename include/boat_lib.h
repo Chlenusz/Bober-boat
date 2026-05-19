@@ -32,7 +32,7 @@ struct __attribute__((packed)) Waypoint {
 };
 
 struct __attribute__((packed)) controlData {
-    int16_t rudder;      
+    uint16_t rudder;      
     uint16_t throttle;
 };
 
@@ -74,6 +74,7 @@ uint8_t rxBuffer[256];      // Bufor na odebrane bajty
 uint8_t rxLength = 0;       // Zapisana długość odebranej wiadomości
 
 bool newDataReady = false;  // Flaga informująca, że czeka nowa wiadomość
+uint8_t LoRaReconnectAttempts = 0; 
 
 PacketID packetId;
 

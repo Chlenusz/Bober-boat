@@ -1,5 +1,6 @@
 #include "boat_lib.h"
 #include "Navigation.h"
+#include <ESP32Servo.h>
 #include "DHT.h"
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
@@ -12,6 +13,8 @@
 #define MOTOR_PIN 32
 #define MOTOR_STATE_PIN 25
 
+#define SERVO_PIN 21
+
 #define DTH_PIN 26
 #define DHT_INTERVAL 5000
 #define DHTTYPE DHT11
@@ -19,6 +22,8 @@
 #define GPS_RX_PIN 16 
 #define GPS_TX_PIN 17 
 #define GPS_BAUD 9600
+
+
 
 #define DEBUG
 
@@ -30,6 +35,8 @@ unsigned long lastControlTime = 0;
 
 double distanceToTarget = 0.0;
 double course = 0.0;
+
+Servo servo;
 
 bool LoRaStatus = false;
 
@@ -46,21 +53,13 @@ NavigationSystem navigation; // Inicjalizacja systemu nawigacji
 
 // ===================== Funkcje Lokalne ==========================
 void setThrottle(uint16_t value) {
-    // 1. Mapowanie z zakresu serwera (0 - 65000) na zakres PWM 8-bit (0 - 255)
-    uint8_t pwmValue = map(value, 0, 65000, 0, 255);
-    
-    // Zabezpieczenie przed dziwnymi wartościami z poza zakresu
-    if (value > 65000) pwmValue = 255; 
+    ledcWrite(0, value); 
+    digitalWrite(MOTOR_STATE_PIN, value > 0 ? HIGH : LOW); 
+}
 
-    // 2. Wysterowanie silnika
-    ledcWrite(0, pwmValue); 
-    
-    // 3. Włączenie pinu stanu (używaj digitalWrite, a nie analogWrite do stanów HIGH/LOW!)
-    digitalWrite(MOTOR_STATE_PIN, pwmValue > 0 ? HIGH : LOW); 
-
-    #ifdef DEBUG
-    Serial.println("Silnik RAW: " + String(value) + " | Silnik PWM (0-255): " + String(pwmValue));
-    #endif
+void setRudder(uint16_t value) {
+    servo.write(value);// Ustawienie wartości PWM na podstawie wartości skrętu zakres: 0-180
+    Serial.println("Ustawianie skrętu na wartość: " + String(value));
 }
 #ifndef DEBUG
 void computeWaypoints() {
@@ -91,9 +90,11 @@ void setup(){
     myPID.SetMode(AUTOMATIC);
     myPID.SetOutputLimits(-45, 45);
 
-    pinMode(MOTOR_STATE_PIN, OUTPUT); // Pin do monitorowania stanu silnika (np. włączony/wyłączony)
-    ledcSetup(0,500, 8); // Konfiguracja kanału PWM: kanał 0, częstotliwość 500 Hz, rozdzielczość 8 bitów
-    ledcAttachPin(MOTOR_PIN, 0); // Przypisanie pinu do kanału PWM
+    servo.attach(SERVO_PIN);
+
+    pinMode(MOTOR_STATE_PIN, OUTPUT);
+    ledcSetup(0,20000, 8);
+    ledcAttachPin(MOTOR_PIN, 0);
 
     #ifndef DEBUG
     navigation.begin(); // Inicjalizacja systemu nawigacji
@@ -136,7 +137,12 @@ void loop(){
         }
         
     }else {
-        LoRaStatus = setupLoRa();
+        if(LoRaReconnectAttempts <5){LoRaStatus = setupLoRa();}
+        if(!(LoRaReconnectAttempts>10)){
+            LoRaReconnectAttempts++;
+            Serial.println("Nie można połączyć się z LoRa! Próba ponownego połączenia: " + String(LoRaReconnectAttempts));
+        }
+
     }
     
     if (newDataReady) {
@@ -150,8 +156,8 @@ void loop(){
 
     if (currentTime-lastControlTime >= CONTROL_INTERVAL_MS) {
         lastControlTime = currentTime;
-        Serial.println("Aktualizacja sterowania: " + String(control.throttle));
-
+        Serial.println("Aktualizacja sterowania: " + String(control.throttle)+", " + String(control.rudder));
+        setRudder(control.rudder);
         setThrottle(control.throttle);
     }
 
