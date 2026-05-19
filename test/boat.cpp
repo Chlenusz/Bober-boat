@@ -23,7 +23,7 @@
 #define GPS_TX_PIN 17 
 #define GPS_BAUD 9600
 
-
+#define FAILSAFE_TIMEOUT_MS 2000
 
 #define DEBUG
 
@@ -32,6 +32,7 @@ unsigned long currentTime = 0;
 unsigned long lastTelemetryTime = 0;
 unsigned long lastDHTTime = 0;
 unsigned long lastControlTime = 0;
+unsigned long failSafeTimer = 0;
 
 double distanceToTarget = 0.0;
 double course = 0.0;
@@ -39,6 +40,7 @@ double course = 0.0;
 Servo servo;
 
 bool LoRaStatus = false;
+bool failsafeStatus = false;
 
 double Setpoint, Input, Output;
 double Kp=2.0, Ki=0.5, Kd=1.0;
@@ -63,6 +65,14 @@ void setRudder(uint16_t value) {
 }
 #ifndef DEBUG
 void computeWaypoints() {
+
+    double targetLat, targetLng;
+    //Konwersja waypointów z formatu int32_t do double dla pierwszego punktu docelowego
+    if(route.pointsCount > 0){
+        targetLat = (double)route.waypoints[0].lat / 10000000.0;
+        targetLng = (double)route.waypoints[0].lng / 10000000.0;
+    }
+
     navigation.update(); // Aktualizacja danych nawigacyjnych
 
     Setpoint = TinyGPSPlus::courseTo(telemetry.GPSLat, telemetry.GPSLng, route.waypoints[0].lat, route.waypoints[0].lng);
@@ -108,12 +118,7 @@ void setup(){
 // ===================== Główna pętla programu =====================
 void loop(){
     currentTime = millis();
-
-    //Konwersja waypointów z formatu int32_t do double dla pierwszego punktu docelowego
-    if(route.pointsCount > 0){
-        double targetLat = (double)route.waypoints[0].lat / 10000000.0;
-        double targetLng = (double)route.waypoints[0].lng / 10000000.0;
-    }
+    
 
     //computeWaypoints();
 
@@ -151,14 +156,25 @@ void loop(){
         if (!decodeSuccess) {
             Serial.println("Nie można przetworzyć odebranej wiadomości sterującej.");
         }
-
+        if(packetId == PacketID::ID_CONTROL){
+            failSafeTimer = currentTime; // Reset timera awaryjnego po otrzymaniu poprawnej wiadomości sterującej
+            failsafeStatus = false; // Wyłącz tryb awaryjny
+        }
     }
 
     if (currentTime-lastControlTime >= CONTROL_INTERVAL_MS) {
         lastControlTime = currentTime;
         Serial.println("Aktualizacja sterowania: " + String(control.throttle)+", " + String(control.rudder));
-        setRudder(control.rudder);
-        setThrottle(control.throttle);
+        if (!failsafeStatus && (currentTime - failSafeTimer >= FAILSAFE_TIMEOUT_MS)) {
+            setRudder(90);
+            setThrottle(0);
+            failsafeStatus = true; // Włącz tryb awaryjny
+            Serial.println("Tryb awaryjny aktywowany! Brak aktualizacji sterowania przez " + String(FAILSAFE_TIMEOUT_MS) + " ms.");
+        }else{
+            setRudder(control.rudder);
+            setThrottle(control.throttle);
+        }
+        
     }
 
     if(currentTime - lastDHTTime >= DHT_INTERVAL) {

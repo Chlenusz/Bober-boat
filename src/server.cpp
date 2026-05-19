@@ -226,7 +226,7 @@ void sendUDP(deviceCredentials& targetDevice, const String& message) {
 void receiveUDP() {
     int packetSize = udp.parsePacket();
     if (packetSize) {
-        char incomingPacket[255];
+        char incomingPacket[255]; // zmień na 256, aby mieć miejsce na null terminator
         int len = udp.read(incomingPacket, 255);
         if (len > 0) {
             incomingPacket[len] = '\0'; 

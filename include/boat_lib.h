@@ -71,9 +71,9 @@ const uint8_t BOAT_ADDRESS = 0xAA;
 const uint8_t SERVER_ADDRESS = 0xBB;
 
 uint8_t rxBuffer[256];      // Bufor na odebrane bajty
-uint8_t rxLength = 0;       // Zapisana długość odebranej wiadomości
+volatile uint8_t rxLength = 0;       // Zapisana długość odebranej wiadomości
 
-bool newDataReady = false;  // Flaga informująca, że czeka nowa wiadomość
+volatile bool newDataReady = false;  // Flaga informująca, że czeka nowa wiadomość
 uint8_t LoRaReconnectAttempts = 0; 
 
 PacketID packetId;
@@ -88,7 +88,7 @@ routeData route; // Struktura przechowująca dane trasy
  * 
  * @param packetSize 
  */
-void onReceive(int packetSize) {
+void volatile onReceive(int packetSize) {
     if (packetSize == 0) return;          // if there's no packet, return
 
     // read packet header bytes:
